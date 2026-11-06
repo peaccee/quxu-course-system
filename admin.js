@@ -322,7 +322,8 @@ function renderEnrollments(){
  const q=($("#enrollment-search")?.value||"").toLowerCase(), f=$("#enrollment-filter")?.value||"all";
  const rows=enrollmentRows.filter(e=>(f==="all"|| (f==="active"?e.status==="active":e.status!=="active")) && `${e.student?.name||""} ${e.course?.name||""} ${e.course?.period_label||""}`.toLowerCase().includes(q));
  if(!rows.length){$("#enrollment-list").innerHTML='<div class="empty-state">目前沒有符合條件的報名資料。</div>';return;}
- $("#enrollment-list").innerHTML=rows.map(e=>`<article class="student-card"><div class="student-card-main"><h3>${esc(e.student?.name||"未知學員")}｜${esc(e.course?.name||"未知課程")}</h3><p class="muted">${esc(e.course?.period_label||"")}・${esc(e.status||"未設定狀態")}</p><p>已購 <b>${Number(e.total_sessions||0)}</b> 堂／${Number(e.total_hours||0)} 小時　剩餘 <b>${Number(e.remaining_sessions||0)}</b> 堂／${Number(e.remaining_hours||0)} 小時</p><p class="muted small">學費 ${money(e.tuition_amount)}・器材費 ${money(e.equipment_amount)}</p></div><div class="student-actions"><button class="button-secondary" data-makeup-history="${e.id}">補課紀錄</button><button class="button-secondary" data-ledger="${e.id}">交易紀錄</button></div></article>`).join("");
+ $("#enrollment-list").innerHTML=rows.map(e=>`<article class="student-card"><div class="student-card-main"><h3>${esc(e.student?.name||"未知學員")}｜${esc(e.course?.name||"未知課程")}</h3><p class="muted">${esc(e.course?.period_label||"")}・${esc(e.status||"未設定狀態")}</p><p>已購 <b>${Number(e.total_sessions||0)}</b> 堂／${Number(e.total_hours||0)} 小時　剩餘 <b>${Number(e.remaining_sessions||0)}</b> 堂／${Number(e.remaining_hours||0)} 小時</p><p class="muted small">學費 ${money(e.tuition_amount)}・器材費 ${money(e.equipment_amount)}</p></div><div class="student-actions"><button class="button-secondary" data-edit-enrollment="${e.id}">編輯報名</button><button class="button-secondary" data-makeup-history="${e.id}">補課紀錄</button><button class="button-secondary" data-ledger="${e.id}">交易紀錄</button></div></article>`).join("");
+ $("#enrollment-list").querySelectorAll("[data-edit-enrollment]").forEach(b=>b.onclick=()=>editEnrollment(b.dataset.editEnrollment));
  $("#enrollment-list").querySelectorAll("[data-makeup-history]").forEach(b=>b.onclick=()=>showMakeupHistory(b.dataset.makeupHistory));
  $("#enrollment-list").querySelectorAll("[data-ledger]").forEach(b=>b.onclick=()=>showLedger(b.dataset.ledger));
 }
@@ -344,6 +345,36 @@ $("#enrollment-form")?.addEventListener("submit",async ev=>{
  if(purchaseError){await supabase.from("enrollments").delete().eq("id",en.id);$("#enrollment-error").textContent=`報名建立後，首次購買紀錄失敗：${purchaseError.message}。已嘗試回復報名資料。`;return;}
  closeDialog("enrollment-dialog");notify("報名與首次購買堂數、時數已建立。");await loadEnrollments();
 });
+
+async function editEnrollment(id){
+ const e=enrollmentRows.find(x=>x.id===id); if(!e)return;
+ const [{data:ss,error:se},{data:cs,error:ce}]=await Promise.all([
+  supabase.from("students").select("id,name").order("name"),
+  supabase.from("courses").select("id,name,period_label").order("name")
+ ]);
+ if(se||ce){notify(`讀取選項失敗：${(se||ce).message}`,true);return;}
+ const choose=(label,items,current)=>{const list=items.map((x,i)=>`${i+1}. ${x.label}${x.id===current?"（目前）":""}`).join("\n");const answer=prompt(`${label}，輸入編號：\n${list}`,String(Math.max(1,items.findIndex(x=>x.id===current)+1)));if(answer===null)return null;const n=Number(answer);return Number.isInteger(n)&&n>=1&&n<=items.length?items[n-1].id:undefined;};
+ const student=choose("選擇學員",(ss||[]).map(x=>({id:x.id,label:x.name})),e.student_id);if(student===null)return;if(!student){notify("學員編號無效。",true);return;}
+ const course=choose("選擇課程期別",(cs||[]).map(x=>({id:x.id,label:`${x.name}｜${x.period_label}`})),e.course_id);if(course===null)return;if(!course){notify("課程編號無效。",true);return;}
+ const ask=(label,value)=>prompt(label,value==null?"":String(value));
+ const date=ask("報名日期（YYYY-MM-DD）",e.purchased_on||"");if(date===null)return;
+ const totalSessions=ask("購買總堂數",e.total_sessions);if(totalSessions===null)return;
+ const totalHours=ask("購買總時數（最多一位小數）",e.total_hours);if(totalHours===null)return;
+ const remainingSessions=ask("剩餘堂數（可人工調整）",e.remaining_sessions);if(remainingSessions===null)return;
+ const remainingHours=ask("剩餘時數（最多一位小數，可人工調整）",e.remaining_hours);if(remainingHours===null)return;
+ const tuition=ask("學費",e.tuition_amount);if(tuition===null)return;
+ const rental=ask("是否租借器材？輸入 y 或 n",e.needs_equipment_rental?"y":"n");if(rental===null)return;
+ if(!["y","n"].includes(rental.trim().toLowerCase())){notify("器材租借請輸入 y 或 n。",true);return;}
+ const equipment=ask("器材租借費",e.equipment_amount);if(equipment===null)return;
+ const status=ask("報名狀態（沿用系統狀態值，例如 active）",e.status||"active");if(status===null)return;
+ const reason=ask("請填寫本次修改原因（必填；若剩餘額度變動會寫入交易紀錄）","");if(reason===null)return;
+ const intPattern=/^\d+$/,decimalPattern=/^\d+(?:\.\d)?$/;
+ if(!intPattern.test(totalSessions)||!intPattern.test(remainingSessions)||!decimalPattern.test(totalHours)||!decimalPattern.test(remainingHours)||![tuition,equipment].every(v=>/^\d+(?:\.\d{1,2})?$/.test(v))){notify("數值格式不正確：堂數需為整數，時數最多一位小數，費用請輸入非負數。",true);return;}
+ const {error}=await supabase.rpc("admin_update_enrollment",{p_enrollment_id:id,p_student_id:student,p_course_id:course,p_purchased_on:date,p_total_sessions:Number(totalSessions),p_total_hours:Number(totalHours),p_remaining_sessions:Number(remainingSessions),p_remaining_hours:Number(remainingHours),p_tuition_amount:Number(tuition),p_needs_equipment_rental:rental.trim().toLowerCase()==="y",p_equipment_amount:Number(equipment),p_status:status.trim(),p_reason:reason.trim()});
+ if(error){notify(`更新失敗：${error.message}`,true);return;}
+ notify("報名資料已更新；剩餘堂數／時數異動已寫入交易紀錄。");await loadEnrollments();
+}
+
 async function showMakeupHistory(id){
  const {data,error}=await supabase.from("makeup_records").select("makeup_date,duration_hours,status,created_at,notes").eq("enrollment_id",id).order("makeup_date",{ascending:false});
  if(error){notify(`讀取補課紀錄失敗：${error.message}`,true);return;}
