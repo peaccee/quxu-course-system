@@ -100,8 +100,34 @@ async function loadSessions() {
   if (error) { $("#session-list").innerHTML = `<p class="form-error">讀取堂次失敗：${esc(error.message)}</p>`; return; }
   const dutyMap = Object.fromEntries(dutyProfiles.map(p => [p.id, p.display_name || "未命名人員"]));
   if (!data?.length) { $("#session-list").innerHTML = '<div class="empty-state compact">尚未建立堂次，請新增或批次建立。</div>'; return; }
-  $("#session-list").innerHTML = data.map(s => `<div class="session-row"><div class="session-no">第 ${s.session_no} 堂</div><div class="session-info"><strong>${esc(s.class_date)}</strong><span>${esc(String(s.start_time).slice(0,5))}–${esc(String(s.end_time).slice(0,5))}・${Number(s.duration_hours).toFixed(2).replace(/0+$/, "").replace(/\.$/, "")} 小時</span><small>值班：${esc(s.duty_user_id ? dutyMap[s.duty_user_id] || "未指定" : "未指定")}</small></div><button class="button-secondary" data-edit-session="${s.id}">編輯</button></div>`).join("");
+  $("#session-list").innerHTML = data.map(s => `<div class="session-row"><div class="session-no">第 ${s.session_no} 堂</div><div class="session-info"><strong>${esc(s.class_date)}</strong><span>${esc(String(s.start_time).slice(0,5))}–${esc(String(s.end_time).slice(0,5))}・${Number(s.duration_hours).toFixed(2).replace(/0+$/, "").replace(/\.$/, "")} 小時</span><small>值班：${esc(s.duty_user_id ? dutyMap[s.duty_user_id] || "未指定" : "未指定")}</small></div><div class="session-actions"><button class="button-secondary" data-edit-session="${s.id}">編輯</button><button class="text-button danger-text" data-delete-session="${s.id}">刪除</button></div></div>`).join("");
   $("#session-list").querySelectorAll("[data-edit-session]").forEach(b => b.addEventListener("click", () => openSessionForm(data.find(s => s.id === b.dataset.editSession))));
+  $("#session-list").querySelectorAll("[data-delete-session]").forEach(b => b.addEventListener("click", () => deleteSession(data.find(s => s.id === b.dataset.deleteSession))));
+}
+
+async function deleteSession(session) {
+  if (!session) return;
+  // Protect attendance and makeup history from accidental cascade/restrict deletion.
+  const [{ count: attendanceCount, error: attendanceError }, { count: makeupCount, error: makeupError }] = await Promise.all([
+    supabase.from("attendance").select("id", { count: "exact", head: true }).eq("session_id", session.id),
+    supabase.from("makeup_records").select("id", { count: "exact", head: true }).eq("original_session_id", session.id)
+  ]);
+  if (attendanceError || makeupError) {
+    notify(`無法確認堂次是否有相關紀錄：${attendanceError?.message || makeupError?.message}`, true);
+    return;
+  }
+  if ((attendanceCount || 0) > 0 || (makeupCount || 0) > 0) {
+    notify(`第 ${session.session_no} 堂已有點名或補課關聯紀錄，為保留歷史資料，不能直接刪除。你仍可使用「編輯」修正日期或時間。`, true);
+    return;
+  }
+  if (!confirm(`確定刪除第 ${session.session_no} 堂（${session.class_date}）嗎？此操作無法復原。`)) return;
+  const { error } = await supabase.from("course_sessions").delete().eq("id", session.id).eq("course_id", selectedCourse.id);
+  if (error) {
+    notify(`刪除失敗：${error.message}`, true);
+    return;
+  }
+  notify(`第 ${session.session_no} 堂已刪除。`);
+  await loadSessions();
 }
 function updateDetailHeading() { $("#selected-course-title").textContent = selectedCourse.name; $("#selected-course-meta").textContent = `${selectedCourse.period_label}｜預計 ${selectedCourse.total_sessions} 堂｜${selectedCourse.status === "active" ? "進行中" : "已封存"}`; }
 $("#close-detail").addEventListener("click", () => { $("#course-detail").hidden = true; selectedCourse = null; });
