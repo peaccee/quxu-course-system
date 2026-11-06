@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>續曲課務系統｜登入</title><link rel="stylesheet" href="./css/style.css">
+</head>
+<body class="login-page">
+  <main class="login-card">
+    <div class="brand-mark">Q</div>
+    <p class="eyebrow">QUXU COURSE MANAGEMENT</p>
+    <h1>續曲課務系統</h1>
+    <p class="muted">請使用管理者或現場點名帳號登入</p>
+    <form id="login-form">
+      <label for="username">帳號</label>
+      <input id="username" name="username" autocomplete="username" placeholder="管理者 Email 或 checkin" required>
+      <label for="password">密碼</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <button type="submit" id="login-button">登入系統</button>
+      <p id="message" class="message" role="status"></p>
+    </form>
+    <p class="footnote">現場點名人員請使用共用帳號 checkin。</p>
+  </main>
+  <script type="module" src="./js/login.js"></script>
+</body></html>
