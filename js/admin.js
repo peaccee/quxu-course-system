@@ -201,11 +201,6 @@ function switchModule(name) {
   if (name === "stats") loadStats();
 }
 document.querySelectorAll("[data-module]").forEach(button => {
-    button.classList.toggle("is-active", button.dataset.module === name);
-  });
-  if (isStudents) loadStudents();
-}
-document.querySelectorAll("[data-module]").forEach(button => {
   button.addEventListener("click", () => switchModule(button.dataset.module));
 });
 
