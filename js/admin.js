@@ -154,18 +154,10 @@ $("#new-session").addEventListener("click", async () => {
   openSessionForm({ session_no: (data?.[0]?.session_no || 0) + 1 });
 });
 $("#session-form").addEventListener("submit", async (event) => {
-  event.preventDefault(); const id = $("#session-id").value;
-  const start = $("#session-start").value; const end = $("#session-end").value;
-  const hours = duration(start, end); if (!hours || hours > 12) { $("#session-error").textContent = "請確認開始與結束時間，單堂時數需在 12 小時內。"; return; }
+  event.preventDefault(); const id = $("#session-id").value; const start = $("#session-start").value; const end = $("#session-end").value; const hours = duration(start, end);
+  if (!hours || hours > 12) { $("#session-error").textContent = "請確認時間，單堂時數需在 12 小時內。"; return; }
   const payload = { class_date: $("#session-date").value, start_time: start, end_time: end, duration_hours: hours, duty_user_id: $("#session-duty").value || null };
-  let result;
-  if (id) {
-    result = await supabase.from("course_sessions").update(payload).eq("id", id).eq("course_id", selectedCourse.id);
-  } else {
-    const { data: latest, error: latestError } = await supabase.from("course_sessions").select("session_no").eq("course_id", selectedCourse.id).order("session_no", { ascending: false }).limit(1);
-    if (latestError) { $("#session-error").textContent = latestError.message; return; }
-    result = await supabase.from("course_sessions").insert({ ...payload, course_id: selectedCourse.id, session_no: (latest?.[0]?.session_no || 0) + 1, equipment_rental_count: 0 });
-  }
+  const result = id ? await supabase.from("course_sessions").update(payload).eq("id", id).eq("course_id", selectedCourse.id) : await supabase.from("course_sessions").insert({ ...payload, course_id: selectedCourse.id, session_no: Number($("#session-no").value), equipment_rental_count: 0 });
   if (result.error) { $("#session-error").textContent = result.error.message; return; }
   try { await renumberSessionsByDate(); }
   catch (error) { $("#session-error").textContent = `堂次已儲存，但自動排序失敗：${error.message}。請稍後重新整理或聯絡管理者。`; return; }
@@ -191,12 +183,11 @@ $("#batch-form").addEventListener("submit", async (event) => {
 
 // Admin module navigation
 function switchModule(name) {
-  const modules = ["courses","students","enrollments","makeups","staff","stats"];
+  const modules = ["courses","students","enrollments","staff","stats"];
   modules.forEach(m => { const el = document.getElementById(`${m}-module`); if (el) el.hidden = m !== name; });
   document.querySelectorAll("[data-module]").forEach(button => button.classList.toggle("is-active", button.dataset.module === name));
   if (name === "students") loadStudents();
   if (name === "enrollments") loadEnrollments();
-  if (name === "makeups") loadMakeups();
   if (name === "staff") loadStaff();
   if (name === "stats") loadStats();
 }
@@ -304,9 +295,10 @@ async function toggleStudent(student) {
 
 $("#logout").addEventListener("click", async () => { await supabase.auth.signOut(); location.replace("./index.html"); });
 
-let enrollmentRows = [], makeupRows = [];
+let enrollmentRows = [];
 const todayISO = () => new Date().toLocaleDateString("en-CA");
 const money = v => `$${Number(v||0).toLocaleString("en-US")}`;
+
 async function loadEnrollments() {
   $("#enrollment-list").innerHTML = '<div class="empty-state">載入報名資料中…</div>';
   const [{data: es,error:e1},{data:ss,error:e2},{data:cs,error:e3}] = await Promise.all([
@@ -319,62 +311,177 @@ async function loadEnrollments() {
   enrollmentRows=(es||[]).map(e=>({...e,student:sm[e.student_id],course:cm[e.course_id]}));
   renderEnrollments();
 }
+
 function renderEnrollments(){
  const q=($("#enrollment-search")?.value||"").toLowerCase(), f=$("#enrollment-filter")?.value||"all";
  const rows=enrollmentRows.filter(e=>(f==="all"|| (f==="active"?e.status==="active":e.status!=="active")) && `${e.student?.name||""} ${e.course?.name||""} ${e.course?.period_label||""}`.toLowerCase().includes(q));
  if(!rows.length){$("#enrollment-list").innerHTML='<div class="empty-state">目前沒有符合條件的報名資料。</div>';return;}
- $("#enrollment-list").innerHTML=rows.map(e=>`<article class="student-card"><div class="student-card-main"><h3>${esc(e.student?.name||"未知學員")}｜${esc(e.course?.name||"未知課程")}</h3><p class="muted">${esc(e.course?.period_label||"")}・${esc(e.status||"未設定狀態")}</p><p>已購買 <b>${Number(e.total_hours||0)}</b> 小時　剩餘 <b>${Number(e.remaining_hours||0)}</b> 小時</p><p class="muted small">學費 ${money(e.tuition_amount)}・器材費 ${money(e.equipment_amount)}</p></div><div class="student-actions"><button class="button-secondary" data-buy="${e.id}">加購時數</button><button class="button-secondary" data-ledger="${e.id}">交易紀錄</button></div></article>`).join("");
- $("#enrollment-list").querySelectorAll("[data-buy]").forEach(b=>b.onclick=()=>openPurchase(b.dataset.buy));
+ $("#enrollment-list").innerHTML=rows.map(e=>`<article class="student-card"><div class="student-card-main"><h3>${esc(e.student?.name||"未知學員")}｜${esc(e.course?.name||"未知課程")}</h3><p class="muted">${esc(e.course?.period_label||"")}・${esc(e.status||"未設定狀態")}</p><p>已購 <b>${Number(e.total_sessions||0)}</b> 堂／${Number(e.total_hours||0)} 小時　剩餘 <b>${Number(e.remaining_sessions||0)}</b> 堂／${Number(e.remaining_hours||0)} 小時</p><p class="muted small">學費 ${money(e.tuition_amount)}・器材費 ${money(e.equipment_amount)}</p></div><div class="student-actions"><button class="button-secondary" data-edit-enrollment="${e.id}">編輯報名</button><button class="button-secondary" data-makeup-history="${e.id}">補課紀錄</button><button class="button-secondary" data-ledger="${e.id}">交易紀錄</button></div></article>`).join("");
+ $("#enrollment-list").querySelectorAll("[data-edit-enrollment]").forEach(b=>b.onclick=()=>editEnrollment(b.dataset.editEnrollment));
+ $("#enrollment-list").querySelectorAll("[data-makeup-history]").forEach(b=>b.onclick=()=>showMakeupHistory(b.dataset.makeupHistory));
  $("#enrollment-list").querySelectorAll("[data-ledger]").forEach(b=>b.onclick=()=>showLedger(b.dataset.ledger));
 }
-$("#enrollment-search")?.addEventListener("input",renderEnrollments); $("#enrollment-filter")?.addEventListener("change",renderEnrollments);
+
+$("#enrollment-search")?.addEventListener("input",renderEnrollments);
+$("#enrollment-filter")?.addEventListener("change",renderEnrollments);
+
 $("#new-enrollment")?.addEventListener("click",async()=>{
- const [{data:ss},{data:cs}]=await Promise.all([supabase.from("students").select("id,name").eq("is_active",true).order("name"),supabase.from("courses").select("id,name,period_label").eq("status","active").order("name")]);
+ const [{data:ss},{data:cs}]=await Promise.all([
+   supabase.from("students").select("id,name").eq("is_active",true).order("name"),
+   supabase.from("courses").select("id,name,period_label").eq("status","active").order("name")
+ ]);
  $("#enroll-student").innerHTML=(ss||[]).map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join("");
  $("#enroll-course").innerHTML=(cs||[]).map(c=>`<option value="${c.id}">${esc(c.name)}｜${esc(c.period_label)}</option>`).join("");
- $("#enroll-date").value=todayISO(); $("#enrollment-error").textContent="";
- if(!ss?.length||!cs?.length){notify("請先建立啟用中的學員與課程。",true);return;} showDialog("enrollment-dialog");
+ $("#enroll-date").value=todayISO();
+ $("#enroll-rental").checked=false;
+ $("#enrollment-error").textContent="";
+ if(!ss?.length||!cs?.length){notify("請先建立啟用中的學員與課程。",true);return;}
+ showDialog("enrollment-dialog");
 });
+
 $("#enrollment-form")?.addEventListener("submit",async ev=>{
- ev.preventDefault(); const student_id=$("#enroll-student").value, course_id=$("#enroll-course").value;
- const payload={student_id,course_id,purchased_on:$("#enroll-date").value,total_hours:0,remaining_hours:0,tuition_amount:0,equipment_amount:0,status:"active"};
+ ev.preventDefault();
+ const student_id=$("#enroll-student").value;
+ const course_id=$("#enroll-course").value;
+ const needsRental=$("#enroll-rental").checked;
+ const payload={
+   student_id,
+   course_id,
+   purchased_on:$("#enroll-date").value,
+   total_hours:0,
+   remaining_hours:0,
+   total_sessions:0,
+   remaining_sessions:0,
+   tuition_amount:0,
+   equipment_amount:0,
+   needs_equipment_rental:needsRental,
+   status:"active"
+ };
  const {data:en,error}=await supabase.from("enrollments").insert(payload).select("id").single();
  if(error){$("#enrollment-error").textContent=error.message;return;}
- const {error:purchaseError}=await supabase.rpc("add_enrollment_purchase",{p_enrollment_id:en.id,p_purchase_type:"initial",p_purchased_hours:Number($("#enroll-hours").value),p_tuition_amount:Number($("#enroll-tuition").value||0),p_equipment_amount:Number($("#enroll-equipment").value||0),p_purchased_on:$("#enroll-date").value,p_notes:$("#enroll-notes").value||null});
- if(purchaseError){await supabase.from("enrollments").delete().eq("id",en.id);$("#enrollment-error").textContent=`報名建立後，首次購買紀錄失敗：${purchaseError.message}。已嘗試回復報名資料。`;return;}
- closeDialog("enrollment-dialog");notify("報名與首次購買時數已建立。");await loadEnrollments();
+
+ const {error:purchaseError}=await supabase.rpc("add_enrollment_purchase",{
+   p_enrollment_id:en.id,
+   p_purchase_type:"initial",
+   p_purchased_sessions:Number($("#enroll-sessions").value),
+   p_purchased_hours:Number($("#enroll-hours").value),
+   p_tuition_amount:Number($("#enroll-tuition").value||0),
+   p_equipment_amount:needsRental?Number($("#enroll-equipment").value||0):0,
+   p_purchased_on:$("#enroll-date").value,
+   p_notes:$("#enroll-notes").value||null
+ });
+
+ if(purchaseError){
+   await supabase.from("enrollments").delete().eq("id",en.id);
+   $("#enrollment-error").textContent=`報名建立後，首次購買紀錄失敗：${purchaseError.message}。已嘗試回復報名資料。`;
+   return;
+ }
+ closeDialog("enrollment-dialog");
+ notify("報名與首次購買堂數、時數已建立。");
+ await loadEnrollments();
 });
-function openPurchase(id){$("#purchase-enrollment-id").value=id;$("#purchase-date").value=todayISO();$("#purchase-error").textContent="";showDialog("purchase-dialog");}
-$("#purchase-form")?.addEventListener("submit",async ev=>{
- ev.preventDefault();const {error}=await supabase.rpc("add_enrollment_purchase",{p_enrollment_id:$("#purchase-enrollment-id").value,p_purchase_type:"addon",p_purchased_hours:Number($("#purchase-hours").value),p_tuition_amount:Number($("#purchase-tuition").value||0),p_equipment_amount:Number($("#purchase-equipment").value||0),p_purchased_on:$("#purchase-date").value,p_notes:$("#purchase-notes").value||null});
- if(error){$("#purchase-error").textContent=error.message;return;}closeDialog("purchase-dialog");notify("加購時數已記錄。");await loadEnrollments();
-});
-async function showLedger(id){
- const {data,error}=await supabase.from("enrollment_transactions").select("transaction_type,hours_delta,description,created_at").eq("enrollment_id",id).order("created_at",{ascending:false});
- if(error){notify(`讀取交易紀錄失敗：${error.message}`,true);return;}
- alert((data||[]).map(x=>`${new Date(x.created_at).toLocaleString("zh-TW")}｜${x.transaction_type}｜${x.hours_delta>0?"+":""}${x.hours_delta} 小時｜${x.description||""}`).join("\n")||"尚無交易紀錄");
+
+async function editEnrollment(id) {
+  const e = enrollmentRows.find(row => row.id === id);
+  if (!e) return;
+
+  const [{ data: studentOptions, error: studentError }, { data: courseOptions, error: courseError }] = await Promise.all([
+    supabase.from("students").select("id,name").order("name"),
+    supabase.from("courses").select("id,name,period_label").order("name")
+  ]);
+  if (studentError || courseError) {
+    notify(`讀取編輯選項失敗：${(studentError || courseError).message}`, true);
+    return;
+  }
+
+  const chooseOption = (title, options, selectedId) => {
+    const menu = options.map((item, index) => `${index + 1}. ${item.label}${item.id === selectedId ? "（目前）" : ""}`).join("\n");
+    const currentIndex = options.findIndex(item => item.id === selectedId);
+    const answer = prompt(`${title}，請輸入編號：\n${menu}`, String(currentIndex >= 0 ? currentIndex + 1 : 1));
+    if (answer === null) return null;
+    const index = Number(answer) - 1;
+    if (!Number.isInteger(index) || index < 0 || index >= options.length) return undefined;
+    return options[index].id;
+  };
+  const ask = (label, value) => prompt(label, value == null ? "" : String(value));
+
+  const studentId = chooseOption("選擇學員", (studentOptions || []).map(x => ({ id: x.id, label: x.name })), e.student_id);
+  if (studentId === null) return;
+  if (!studentId) { notify("學員選項無效，請重新操作。", true); return; }
+
+  const courseId = chooseOption("選擇課程期別", (courseOptions || []).map(x => ({ id: x.id, label: `${x.name}｜${x.period_label || ""}` })), e.course_id);
+  if (courseId === null) return;
+  if (!courseId) { notify("課程選項無效，請重新操作。", true); return; }
+
+  const purchasedOn = ask("報名日期（YYYY-MM-DD）", e.purchased_on || todayISO());
+  if (purchasedOn === null) return;
+  const totalSessions = ask("購買總堂數（整數）", e.total_sessions ?? 0);
+  if (totalSessions === null) return;
+  const totalHours = ask("購買總時數（最多一位小數）", e.total_hours ?? 0);
+  if (totalHours === null) return;
+  const remainingSessions = ask("剩餘堂數（整數）", e.remaining_sessions ?? 0);
+  if (remainingSessions === null) return;
+  const remainingHours = ask("剩餘時數（最多一位小數）", e.remaining_hours ?? 0);
+  if (remainingHours === null) return;
+  const tuitionAmount = ask("學費", e.tuition_amount ?? 0);
+  if (tuitionAmount === null) return;
+  const rentalAnswer = ask("是否租借器材？輸入 y 或 n", e.needs_equipment_rental ? "y" : "n");
+  if (rentalAnswer === null) return;
+  if (!["y", "n"].includes(rentalAnswer.trim().toLowerCase())) { notify("器材租借請輸入 y 或 n。", true); return; }
+  const equipmentAmount = ask("器材租借費", e.equipment_amount ?? 0);
+  if (equipmentAmount === null) return;
+  const status = ask("報名狀態（例如 active）", e.status || "active");
+  if (status === null) return;
+  const reason = ask("修改原因（必填，會記錄在人工調整交易）", "");
+  if (reason === null) return;
+
+  const isInteger = value => /^\d+$/.test(String(value).trim());
+  const isOneDecimal = value => /^\d+(?:\.\d)?$/.test(String(value).trim());
+  const isMoney = value => /^\d+(?:\.\d{1,2})?$/.test(String(value).trim());
+  if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(purchasedOn) ||
+      !isInteger(totalSessions) || !isInteger(remainingSessions) ||
+      !isOneDecimal(totalHours) || !isOneDecimal(remainingHours) ||
+      !isMoney(tuitionAmount) || !isMoney(equipmentAmount) ||
+      !reason.trim() || !status.trim()
+  ) {
+    notify("資料格式不正確：日期需為 YYYY-MM-DD、堂數需為整數、時數最多一位小數，費用不可為負數，修改原因必填。", true);
+    return;
+  }
+
+  const { error } = await supabase.rpc("admin_update_enrollment", {
+    p_enrollment_id: id,
+    p_student_id: studentId,
+    p_course_id: courseId,
+    p_purchased_on: purchasedOn,
+    p_total_sessions: Number(totalSessions),
+    p_total_hours: Number(totalHours),
+    p_remaining_sessions: Number(remainingSessions),
+    p_remaining_hours: Number(remainingHours),
+    p_tuition_amount: Number(tuitionAmount),
+    p_needs_equipment_rental: rentalAnswer.trim().toLowerCase() === "y",
+    p_equipment_amount: Number(equipmentAmount),
+    p_status: status.trim(),
+    p_reason: reason.trim()
+  });
+
+  if (error) {
+    notify(`報名資料更新失敗：${error.message}`, true);
+    return;
+  }
+  notify("報名資料已更新，剩餘堂數與時數異動已記錄。");
+  await loadEnrollments();
 }
-$("#new-makeup")?.addEventListener("click",async()=>{
- const [{data:es},{data:ss}]=await Promise.all([supabase.from("enrollments").select("id,student_id,course_id").eq("status","active"),supabase.from("course_sessions").select("id,session_no,class_date").order("class_date")]);
- const [{data:students},{data:courses}]=await Promise.all([supabase.from("students").select("id,name"),supabase.from("courses").select("id,name,period_label")]);
- const sm=Object.fromEntries((students||[]).map(x=>[x.id,x.name])),cm=Object.fromEntries((courses||[]).map(x=>[x.id,`${x.name} ${x.period_label}`]));
- $("#makeup-enrollment").innerHTML=(es||[]).map(e=>`<option value="${e.id}">${esc(sm[e.student_id]||"學員")}｜${esc(cm[e.course_id]||"課程")}</option>`).join("");
- $("#makeup-original").innerHTML='<option value="">未指定</option>'+(ss||[]).map(s=>`<option value="${s.id}">第 ${s.session_no} 堂｜${s.class_date}</option>`).join("");
- $("#makeup-date").value=todayISO();$("#makeup-error").textContent="";showDialog("makeup-dialog");
-});
-$("#makeup-form")?.addEventListener("submit",async ev=>{
- ev.preventDefault();const h=duration($("#makeup-start").value,$("#makeup-end").value);if(!h||h>12){$("#makeup-error").textContent="請確認補課時間。";return;}
- const {error}=await supabase.from("makeup_records").insert({enrollment_id:$("#makeup-enrollment").value,original_session_id:$("#makeup-original").value||null,makeup_date:$("#makeup-date").value,start_time:$("#makeup-start").value,end_time:$("#makeup-end").value,duration_hours:h,status:"scheduled",notes:$("#makeup-notes").value||null});
- if(error){$("#makeup-error").textContent=error.message;return;}closeDialog("makeup-dialog");notify("補課已建立，尚未扣除時數。");await loadMakeups();
-});
-async function loadMakeups(){
- const {data,error}=await supabase.from("makeup_records").select("*").order("makeup_date",{ascending:false});
- if(error){$("#makeup-list").innerHTML=`<div class="empty-state">${esc(error.message)}</div>`;return;}
- const [{data:es},{data:ss}]=await Promise.all([supabase.from("enrollments").select("id,student_id,course_id"),supabase.from("students").select("id,name")]);
- const sm=Object.fromEntries((ss||[]).map(x=>[x.id,x.name])), em=Object.fromEntries((es||[]).map(x=>[x.id,x]));
- $("#makeup-list").innerHTML=(data||[]).map(m=>{const e=em[m.enrollment_id];return `<article class="student-card"><div class="student-card-main"><h3>${esc(sm[e?.student_id]||"學員")}｜${m.makeup_date}</h3><p>${m.start_time}–${m.end_time}・${m.duration_hours} 小時</p><p class="muted">${m.status==="completed"?"已完成":m.status==="cancelled"?"已取消":"已預約"}</p></div><div class="student-actions">${m.status==="scheduled"?`<button class="button-secondary" data-complete-makeup="${m.id}">標記完成並扣時</button><button class="text-button danger-text" data-cancel-makeup="${m.id}">取消</button>`:""}</div></article>`}).join("")||'<div class="empty-state">目前沒有補課紀錄。</div>';
- $("#makeup-list").querySelectorAll("[data-complete-makeup]").forEach(b=>b.onclick=async()=>{if(!confirm("補課已實際完成？確認後會扣除補課時數。"))return;const {error}=await supabase.rpc("complete_makeup_record",{p_makeup_id:b.dataset.completeMakeup});if(error)notify(`完成補課失敗：${error.message}`,true);else{notify("補課已完成並扣除時數。");loadMakeups();}});
- $("#makeup-list").querySelectorAll("[data-cancel-makeup]").forEach(b=>b.onclick=async()=>{const {error}=await supabase.from("makeup_records").update({status:"cancelled"}).eq("id",b.dataset.cancelMakeup).eq("status","scheduled");if(error)notify(error.message,true);else loadMakeups();});
+
+async function showMakeupHistory(id){
+ const {data,error}=await supabase.from("makeup_records").select("makeup_date,duration_hours,status,created_at,notes").eq("enrollment_id",id).order("makeup_date",{ascending:false});
+ if(error){notify(`讀取補課紀錄失敗：${error.message}`,true);return;}
+ alert((data||[]).map(x=>`${x.makeup_date}｜${Number(x.duration_hours).toFixed(2)} 小時｜${x.status==="completed"?"已完成":x.status==="cancelled"?"已取消":"已預約"}${x.notes?"｜"+x.notes:""}`).join("\n")||"此報名尚無補課紀錄。");
+}
+async function showLedger(id){
+ const {data,error}=await supabase.from("enrollment_transactions").select("transaction_type,hours_delta,sessions_delta,description,created_at").eq("enrollment_id",id).order("created_at",{ascending:false});
+ if(error){notify(`讀取交易紀錄失敗：${error.message}`,true);return;}
+ alert((data||[]).map(x=>`${new Date(x.created_at).toLocaleString("zh-TW")}｜${x.transaction_type}｜${Number(x.sessions_delta||0)>0?"+":""}${Number(x.sessions_delta||0)} 堂｜${Number(x.hours_delta)>0?"+":""}${x.hours_delta} 小時｜${x.description||""}`).join("\n")||"尚無交易紀錄");
 }
 async function loadStaff(){
  const {data,error}=await supabase.from("profiles").select("id,display_name,role,created_at").order("role").order("display_name");
