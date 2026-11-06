@@ -7,3 +7,23 @@
 /* Session row actions: edit and safe delete */
 .session-actions{display:flex;align-items:center;gap:6px;white-space:nowrap}.danger-text{color:#a04436}.danger-text:hover{background:#f9eeec}
 @media(max-width:680px){.session-actions{gap:2px}.session-actions button{padding:8px 9px;font-size:12px}}
+
+
+/* Student management */
+.module-tabs{display:flex;gap:8px;border-bottom:1px solid #e5e8ec;margin:0 0 24px;padding-bottom:10px}
+.module-tab{background:transparent;color:#687384;padding:10px 15px;border-radius:10px}
+.module-tab.is-active{background:#263b50;color:#fff}
+.student-filters{display:grid;grid-template-columns:1fr 180px;gap:10px;margin:18px 0 8px}
+.student-filters input,.student-filters select{background:#fff}
+.student-list{display:grid;gap:10px}
+.student-card{display:flex;align-items:center;justify-content:space-between;gap:18px;background:#fff;border:1px solid #e7e9ed;border-radius:15px;padding:18px 20px}
+.student-card.is-inactive{background:#fafafa}
+.student-card-main{min-width:0}
+.student-name-line{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.student-name-line h3{margin:0;font-size:16px}
+.student-phone,.student-notes{font-size:13px;color:#77808d;margin:7px 0 0;overflow-wrap:anywhere}
+.student-notes{white-space:pre-wrap}
+.student-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.app-dialog textarea{width:100%;border:1px solid #dce0e5;border-radius:10px;padding:11px 12px;font:inherit;color:inherit;resize:vertical}
+.app-dialog textarea:focus{outline:2px solid #b7c9d8;border-color:#708ba3}
+@media(max-width:680px){.student-card{align-items:flex-start;flex-direction:column}.student-actions{width:100%}.student-filters{grid-template-columns:1fr}.module-tabs{overflow-x:auto}.module-tab{white-space:nowrap}}

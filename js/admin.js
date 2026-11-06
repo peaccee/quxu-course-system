@@ -6,6 +6,7 @@ let currentUser = null;
 let selectedCourse = null;
 let courses = [];
 let dutyProfiles = [];
+let students = [];
 
 function notify(text, isError = false) {
   message.textContent = text;
@@ -186,6 +187,119 @@ $("#batch-form").addEventListener("submit", async (event) => {
   catch (sortError) { $("#batch-error").textContent = `堂次已建立，但自動排序失敗：${sortError.message}`; return; }
   closeDialog("batch-dialog"); notify(`已批次建立 ${count} 堂課程，編號已依日期自動排序。`); await loadSessions();
 });
+
+
+// Admin module navigation
+function switchModule(name) {
+  const isStudents = name === "students";
+  $("#courses-module").hidden = isStudents;
+  $("#students-module").hidden = !isStudents;
+  document.querySelectorAll("[data-module]").forEach(button => {
+    button.classList.toggle("is-active", button.dataset.module === name);
+  });
+  if (isStudents) loadStudents();
+}
+document.querySelectorAll("[data-module]").forEach(button => {
+  button.addEventListener("click", () => switchModule(button.dataset.module));
+});
+
+async function loadStudents() {
+  $("#student-list").innerHTML = '<div class="empty-state">載入學員資料中…</div>';
+  const { data, error } = await supabase
+    .from("students")
+    .select("id,name,phone,notes,is_active,created_at")
+    .order("created_at", { ascending: false });
+  if (error) {
+    $("#student-list").innerHTML = `<div class="empty-state">讀取學員失敗：${esc(error.message)}</div>`;
+    notify(`讀取學員失敗：${error.message}`, true);
+    return;
+  }
+  students = data || [];
+  renderStudents();
+}
+
+function renderStudents() {
+  const query = $("#student-search").value.trim().toLowerCase();
+  const status = $("#student-status-filter").value;
+  const filtered = students.filter(student => {
+    const matchesStatus = status === "all" || (status === "active" ? student.is_active : !student.is_active);
+    const haystack = `${student.name || ""} ${student.phone || ""}`.toLowerCase();
+    return matchesStatus && haystack.includes(query);
+  });
+  $("#student-count").textContent = `共 ${filtered.length} 位學員`;
+  if (!filtered.length) {
+    $("#student-list").innerHTML = '<div class="empty-state"><strong>沒有符合條件的學員</strong><p>可以調整搜尋文字或狀態篩選。</p></div>';
+    return;
+  }
+  $("#student-list").innerHTML = filtered.map(student => `
+    <article class="student-card ${student.is_active ? "" : "is-inactive"}">
+      <div class="student-card-main">
+        <div class="student-name-line"><h3>${esc(student.name)}</h3><span class="status-pill ${student.is_active ? "active" : "archived"}">${student.is_active ? "啟用中" : "已停用"}</span></div>
+        <p class="student-phone">${student.phone ? esc(student.phone) : "尚未填寫電話"}</p>
+        ${student.notes ? `<p class="student-notes">${esc(student.notes)}</p>` : ""}
+      </div>
+      <div class="student-actions">
+        <button type="button" class="button-secondary" data-edit-student="${student.id}">編輯</button>
+        <button type="button" class="text-button ${student.is_active ? "danger-text" : ""}" data-toggle-student="${student.id}">${student.is_active ? "停用" : "重新啟用"}</button>
+      </div>
+    </article>`).join("");
+  $("#student-list").querySelectorAll("[data-edit-student]").forEach(button => {
+    button.addEventListener("click", () => openStudentForm(students.find(s => s.id === button.dataset.editStudent)));
+  });
+  $("#student-list").querySelectorAll("[data-toggle-student]").forEach(button => {
+    button.addEventListener("click", () => toggleStudent(students.find(s => s.id === button.dataset.toggleStudent)));
+  });
+}
+
+$("#student-search").addEventListener("input", renderStudents);
+$("#student-status-filter").addEventListener("change", renderStudents);
+$("#new-student").addEventListener("click", () => openStudentForm());
+
+function openStudentForm(student = null) {
+  $("#student-dialog-title").textContent = student ? "編輯學員資料" : "新增學員";
+  $("#student-id").value = student?.id || "";
+  $("#student-name").value = student?.name || "";
+  $("#student-phone").value = student?.phone || "";
+  $("#student-notes").value = student?.notes || "";
+  $("#student-error").textContent = "";
+  showDialog("student-dialog");
+}
+
+$("#student-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const id = $("#student-id").value;
+  const name = $("#student-name").value.trim();
+  if (!name) { $("#student-error").textContent = "請填寫學員姓名。"; return; }
+  const payload = {
+    name,
+    phone: $("#student-phone").value.trim() || null,
+    notes: $("#student-notes").value.trim() || null
+  };
+  const result = id
+    ? await supabase.from("students").update(payload).eq("id", id)
+    : await supabase.from("students").insert({ ...payload, is_active: true });
+  if (result.error) {
+    $("#student-error").textContent = `儲存失敗：${result.error.message}`;
+    return;
+  }
+  closeDialog("student-dialog");
+  notify(id ? "學員資料已更新。" : "學員已新增。");
+  await loadStudents();
+});
+
+async function toggleStudent(student) {
+  if (!student) return;
+  const nextActive = !student.is_active;
+  const action = nextActive ? "重新啟用" : "停用";
+  const explanation = nextActive
+    ? `確定重新啟用「${student.name}」嗎？`
+    : `確定停用「${student.name}」嗎？既有報名、點名與時數紀錄會保留。`;
+  if (!confirm(explanation)) return;
+  const { error } = await supabase.from("students").update({ is_active: nextActive }).eq("id", student.id);
+  if (error) { notify(`${action}失敗：${error.message}`, true); return; }
+  notify(`已${action}學員「${student.name}」。`);
+  await loadStudents();
+}
 
 $("#logout").addEventListener("click", async () => { await supabase.auth.signOut(); location.replace("./index.html"); });
 await init();

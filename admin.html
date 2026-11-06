@@ -8,16 +8,46 @@
 <body>
 <header class="topbar"><div><strong>續曲課務系統</strong><span class="topbar-sub">管理者專區</span></div><button class="button-secondary" id="logout">登出</button></header>
 <main class="container admin-container">
-  <section class="welcome"><p class="eyebrow">ADMINISTRATION</p><h1>課程與堂次管理</h1><p class="muted">建立課程期別、安排上課堂次，並管理值班人員。</p></section>
-  <div class="admin-toolbar"><div><h2>課程列表</h2><p class="muted small">封存課程會保留歷史資料，不會刪除。</p></div><button id="new-course">＋ 新增課程</button></div>
+  <section class="welcome"><p class="eyebrow">ADMINISTRATION</p><h1>課務管理</h1><p class="muted">管理課程期別、上課堂次與學員資料。</p></section>
+  <nav class="module-tabs" aria-label="管理模組">
+    <button type="button" class="module-tab is-active" data-module="courses">課程與堂次</button>
+    <button type="button" class="module-tab" data-module="students">學員管理</button>
+  </nav>
   <p id="admin-message" class="message" role="status"></p>
+  <section id="courses-module">
+  <div class="admin-toolbar"><div><h2>課程列表</h2><p class="muted small">封存課程會保留歷史資料，不會刪除。</p></div><button id="new-course">＋ 新增課程</button></div>
   <section id="course-list" class="course-list"><div class="panel muted">載入課程資料中…</div></section>
   <section id="course-detail" class="panel detail-panel" hidden>
     <div class="detail-heading"><div><p class="eyebrow">COURSE SESSIONS</p><h2 id="selected-course-title">堂次管理</h2><p id="selected-course-meta" class="muted small"></p></div><button class="button-secondary" id="close-detail">收合</button></div>
     <div class="session-toolbar"><h3>堂次列表</h3><div class="button-row"><button class="button-secondary" id="batch-sessions">批次建立</button><button id="new-session">＋ 新增堂次</button></div></div>
     <div id="session-list" class="session-list"></div>
   </section>
+  </section>
+  <section id="students-module" hidden>
+    <div class="admin-toolbar student-toolbar">
+      <div><h2>學員名單</h2><p class="muted small">停用學員會保留歷史報名與點名紀錄，不會刪除資料。</p></div>
+      <button id="new-student">＋ 新增學員</button>
+    </div>
+    <div class="student-filters">
+      <input id="student-search" type="search" placeholder="搜尋姓名或電話" aria-label="搜尋學員姓名或電話">
+      <select id="student-status-filter" aria-label="學員狀態"><option value="active">啟用中</option><option value="all">全部學員</option><option value="inactive">已停用</option></select>
+    </div>
+    <p id="student-count" class="muted small"></p>
+    <section id="student-list" class="student-list"><div class="empty-state">載入學員資料中…</div></section>
+  </section>
 </main>
+
+<dialog id="student-dialog" class="app-dialog">
+  <form id="student-form" method="dialog">
+    <div class="dialog-heading"><h2 id="student-dialog-title">新增學員</h2><button type="button" class="icon-close" data-close="student-dialog">✕</button></div>
+    <input type="hidden" id="student-id">
+    <label for="student-name">學員姓名</label><input id="student-name" required maxlength="100" placeholder="請輸入姓名">
+    <label for="student-phone">聯絡電話</label><input id="student-phone" type="tel" maxlength="40" placeholder="請輸入聯絡電話">
+    <label for="student-notes">備註</label><textarea id="student-notes" rows="4" maxlength="2000" placeholder="選填，例如：聯絡時段、特殊提醒"></textarea>
+    <p class="form-error" id="student-error"></p>
+    <div class="dialog-actions"><button type="button" class="button-secondary" data-close="student-dialog">取消</button><button type="submit">儲存學員</button></div>
+  </form>
+</dialog>
 
 <dialog id="course-dialog" class="app-dialog">
   <form id="course-form" method="dialog">
