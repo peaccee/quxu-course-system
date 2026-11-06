@@ -9,5 +9,12 @@
 <label for="session-select">選擇上課日期</label><select id="session-select" disabled><option value="">請先選擇課程</option></select>
 <div id="session-info" class="muted small"></div>
 <div id="roster" class="roster"><p class="muted">選擇課程與日期後顯示點名名單。</p></div>
-<p id="message" class="message" role="status"></p>
+<section class="panel makeup-entry">
+<h2>補課登記</h2><p class="muted small">先選擇班別，再選擇學員。日期會自動帶入目前選取的點名日期；送出後立即扣除補課時數，不會更動原本的請假紀錄。</p>
+<label for="makeup-student">選擇學員</label><select id="makeup-student" disabled><option value="">請先選擇班別</option></select>
+<label for="makeup-date">補課日期</label><input id="makeup-date" type="date" readonly>
+<label for="makeup-hours">實際補課時數</label><input id="makeup-hours" type="number" min="0.01" max="12" step="0.25" placeholder="例如 1.5">
+<label for="makeup-notes">備註（選填）</label><input id="makeup-notes" type="text" maxlength="200" placeholder="補充說明">
+<button id="save-makeup" type="button" disabled>登記補課並扣除時數</button><p id="makeup-message" class="message" role="status"></p>
+</section><p id="message" class="message" role="status"></p>
 </section></main><script type="module" src="./js/checkin.js"></script></body></html>
