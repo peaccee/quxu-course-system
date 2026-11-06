@@ -35,11 +35,11 @@
   <form id="session-form" method="dialog">
     <div class="dialog-heading"><h2 id="session-dialog-title">新增堂次</h2><button type="button" class="icon-close" data-close="session-dialog">✕</button></div>
     <input type="hidden" id="session-id">
-    <label for="session-no">堂次編號</label><input id="session-no" type="number" min="1" step="1" required>
+    <label for="session-no">堂次編號（依日期自動排序）</label><input id="session-no" type="number" min="1" step="1" readonly required>
     <label for="session-date">上課日期</label><input id="session-date" type="date" required>
     <div class="form-grid"><div><label for="session-start">開始時間</label><input id="session-start" type="time" required></div><div><label for="session-end">結束時間</label><input id="session-end" type="time" required></div></div>
     <label for="session-duty">值班人員</label><select id="session-duty"><option value="">未指定</option></select>
-    <p class="muted small">上課時數會依開始與結束時間自動計算；器材租借人數由學員資料自動統計。</p>
+    <p class="muted small">堂次編號會依日期與開始時間自動排序；上課時數依開始與結束時間計算。器材租借人數由學員資料自動統計。</p>
     <p class="form-error" id="session-error"></p><div class="dialog-actions"><button type="button" class="button-secondary" data-close="session-dialog">取消</button><button type="submit">儲存堂次</button></div>
   </form>
 </dialog>

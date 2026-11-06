@@ -93,6 +93,13 @@ $("#course-form").addEventListener("submit", async (event) => {
   if (selectedCourse?.id === id) { selectedCourse = courses.find(c => c.id === id) || selectedCourse; updateDetailHeading(); }
 });
 
+async function renumberSessionsByDate() {
+  const { error } = await supabase.rpc("renumber_course_sessions_by_date", {
+    p_course_id: selectedCourse.id
+  });
+  if (error) throw error;
+}
+
 async function loadSessions() {
   if (!selectedCourse) return;
   updateDetailHeading(); $("#course-detail").hidden = false; $("#session-list").innerHTML = '<p class="muted">載入堂次中…</p>';
@@ -126,7 +133,9 @@ async function deleteSession(session) {
     notify(`刪除失敗：${error.message}`, true);
     return;
   }
-  notify(`第 ${session.session_no} 堂已刪除。`);
+  try { await renumberSessionsByDate(); }
+  catch (error) { notify(`堂次已刪除，但自動排序失敗：${error.message}`, true); await loadSessions(); return; }
+  notify(`堂次已刪除，剩餘堂次已依日期重新排序。`);
   await loadSessions();
 }
 function updateDetailHeading() { $("#selected-course-title").textContent = selectedCourse.name; $("#selected-course-meta").textContent = `${selectedCourse.period_label}｜預計 ${selectedCourse.total_sessions} 堂｜${selectedCourse.status === "active" ? "進行中" : "已封存"}`; }
@@ -147,10 +156,19 @@ $("#session-form").addEventListener("submit", async (event) => {
   event.preventDefault(); const id = $("#session-id").value;
   const start = $("#session-start").value; const end = $("#session-end").value;
   const hours = duration(start, end); if (!hours || hours > 12) { $("#session-error").textContent = "請確認開始與結束時間，單堂時數需在 12 小時內。"; return; }
-  const payload = { course_id: selectedCourse.id, session_no: Number($("#session-no").value), class_date: $("#session-date").value, start_time: start, end_time: end, duration_hours: hours, duty_user_id: $("#session-duty").value || null, equipment_rental_count: 0 };
-  const result = id ? await supabase.from("course_sessions").update(payload).eq("id", id) : await supabase.from("course_sessions").insert(payload);
+  const payload = { class_date: $("#session-date").value, start_time: start, end_time: end, duration_hours: hours, duty_user_id: $("#session-duty").value || null };
+  let result;
+  if (id) {
+    result = await supabase.from("course_sessions").update(payload).eq("id", id).eq("course_id", selectedCourse.id);
+  } else {
+    const { data: latest, error: latestError } = await supabase.from("course_sessions").select("session_no").eq("course_id", selectedCourse.id).order("session_no", { ascending: false }).limit(1);
+    if (latestError) { $("#session-error").textContent = latestError.message; return; }
+    result = await supabase.from("course_sessions").insert({ ...payload, course_id: selectedCourse.id, session_no: (latest?.[0]?.session_no || 0) + 1, equipment_rental_count: 0 });
+  }
   if (result.error) { $("#session-error").textContent = result.error.message; return; }
-  closeDialog("session-dialog"); notify(id ? "堂次已更新。" : "堂次已新增。"); await loadSessions();
+  try { await renumberSessionsByDate(); }
+  catch (error) { $("#session-error").textContent = `堂次已儲存，但自動排序失敗：${error.message}。請稍後重新整理或聯絡管理者。`; return; }
+  closeDialog("session-dialog"); notify(id ? "堂次已更新，編號已依日期自動排序。" : "堂次已新增，編號已依日期自動排序。"); await loadSessions();
 });
 
 $("#batch-sessions").addEventListener("click", () => { $("#batch-error").textContent = ""; $("#batch-start-date").value = localDate(new Date()); $("#batch-count").value = selectedCourse.total_sessions; showDialog("batch-dialog"); });
@@ -164,7 +182,9 @@ $("#batch-form").addEventListener("submit", async (event) => {
   const rows = Array.from({ length: count }, (_, i) => { const date = new Date(firstDate); date.setDate(date.getDate() + i * interval); return { course_id: selectedCourse.id, session_no: firstNo + i, class_date: localDate(date), start_time: start, end_time: end, duration_hours: hours, duty_user_id: $("#batch-duty").value || null, equipment_rental_count: 0 }; });
   const { error } = await supabase.from("course_sessions").insert(rows);
   if (error) { $("#batch-error").textContent = error.message; return; }
-  closeDialog("batch-dialog"); notify(`已批次建立 ${count} 堂課程。`); await loadSessions();
+  try { await renumberSessionsByDate(); }
+  catch (sortError) { $("#batch-error").textContent = `堂次已建立，但自動排序失敗：${sortError.message}`; return; }
+  closeDialog("batch-dialog"); notify(`已批次建立 ${count} 堂課程，編號已依日期自動排序。`); await loadSessions();
 });
 
 $("#logout").addEventListener("click", async () => { await supabase.auth.signOut(); location.replace("./index.html"); });
