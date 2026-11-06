@@ -1,13 +1,60 @@
 <!doctype html>
 <html lang="zh-Hant">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>續曲課務系統｜管理首頁</title><link rel="stylesheet" href="./css/style.css"></head>
-<body><header class="topbar"><div><strong>續曲課務系統</strong><span class="topbar-sub">管理者專區</span></div><button class="button-secondary" id="logout">登出</button></header>
-<main class="container"><section class="welcome"><p class="eyebrow">ADMINISTRATION</p><h1>課務管理</h1><p class="muted">管理者登入成功。這是管理首頁的第一版骨架。</p></section>
-<div class="module-grid">
-<article class="module"><span>01</span><h2>點名管理</h2><p>課程、堂次、出席與補課紀錄</p><small>下一階段建置</small></article>
-<article class="module"><span>02</span><h2>學員管理</h2><p>學員資料、購課與剩餘時數</p><small>下一階段建置</small></article>
-<article class="module"><span>03</span><h2>值班人員管理</h2><p>現場值班、行政及其他時數</p><small>下一階段建置</small></article>
-<article class="module"><span>04</span><h2>統計資料</h2><p>在籍人數與年度收入</p><small>下一階段建置</small></article>
-</div><p id="admin-message" class="message"></p></main>
-<script type="module" src="./js/admin.js"></script></body></html>
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>續曲課務系統｜管理者專區</title>
+  <link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+<header class="topbar"><div><strong>續曲課務系統</strong><span class="topbar-sub">管理者專區</span></div><button class="button-secondary" id="logout">登出</button></header>
+<main class="container admin-container">
+  <section class="welcome"><p class="eyebrow">ADMINISTRATION</p><h1>課程與堂次管理</h1><p class="muted">建立課程期別、安排上課堂次，並管理值班人員。</p></section>
+  <div class="admin-toolbar"><div><h2>課程列表</h2><p class="muted small">封存課程會保留歷史資料，不會刪除。</p></div><button id="new-course">＋ 新增課程</button></div>
+  <p id="admin-message" class="message" role="status"></p>
+  <section id="course-list" class="course-list"><div class="panel muted">載入課程資料中…</div></section>
+  <section id="course-detail" class="panel detail-panel" hidden>
+    <div class="detail-heading"><div><p class="eyebrow">COURSE SESSIONS</p><h2 id="selected-course-title">堂次管理</h2><p id="selected-course-meta" class="muted small"></p></div><button class="button-secondary" id="close-detail">收合</button></div>
+    <div class="session-toolbar"><h3>堂次列表</h3><div class="button-row"><button class="button-secondary" id="batch-sessions">批次建立</button><button id="new-session">＋ 新增堂次</button></div></div>
+    <div id="session-list" class="session-list"></div>
+  </section>
+</main>
+
+<dialog id="course-dialog" class="app-dialog">
+  <form id="course-form" method="dialog">
+    <div class="dialog-heading"><h2 id="course-dialog-title">新增課程</h2><button type="button" class="icon-close" data-close="course-dialog">✕</button></div>
+    <input type="hidden" id="course-id">
+    <label for="course-name">課程名稱</label><input id="course-name" required maxlength="100" placeholder="例如：成人爵士鼓班">
+    <label for="course-period">期別／梯次</label><input id="course-period" required maxlength="80" placeholder="例如：2026 春季班">
+    <label for="course-total">預計堂數</label><input id="course-total" type="number" min="1" step="1" required value="12">
+    <label for="course-status">課程狀態</label><select id="course-status"><option value="active">進行中</option><option value="archived">已封存</option></select>
+    <p class="form-error" id="course-error"></p><div class="dialog-actions"><button type="button" class="button-secondary" data-close="course-dialog">取消</button><button type="submit">儲存課程</button></div>
+  </form>
+</dialog>
+
+<dialog id="session-dialog" class="app-dialog">
+  <form id="session-form" method="dialog">
+    <div class="dialog-heading"><h2 id="session-dialog-title">新增堂次</h2><button type="button" class="icon-close" data-close="session-dialog">✕</button></div>
+    <input type="hidden" id="session-id">
+    <label for="session-no">堂次編號</label><input id="session-no" type="number" min="1" step="1" required>
+    <label for="session-date">上課日期</label><input id="session-date" type="date" required>
+    <div class="form-grid"><div><label for="session-start">開始時間</label><input id="session-start" type="time" required></div><div><label for="session-end">結束時間</label><input id="session-end" type="time" required></div></div>
+    <label for="session-duty">值班人員</label><select id="session-duty"><option value="">未指定</option></select>
+    <p class="muted small">上課時數會依開始與結束時間自動計算；器材租借人數由學員資料自動統計。</p>
+    <p class="form-error" id="session-error"></p><div class="dialog-actions"><button type="button" class="button-secondary" data-close="session-dialog">取消</button><button type="submit">儲存堂次</button></div>
+  </form>
+</dialog>
+
+<dialog id="batch-dialog" class="app-dialog">
+  <form id="batch-form" method="dialog">
+    <div class="dialog-heading"><h2>批次建立堂次</h2><button type="button" class="icon-close" data-close="batch-dialog">✕</button></div>
+    <p class="muted small">依固定間隔自動排出堂次；建立後仍可逐堂修改日期與值班人員。</p>
+    <label for="batch-start-date">第一堂日期</label><input id="batch-start-date" type="date" required>
+    <label for="batch-count">建立堂數</label><input id="batch-count" type="number" min="1" max="60" value="12" required>
+    <label for="batch-interval">每堂間隔（天）</label><input id="batch-interval" type="number" min="1" max="60" value="7" required>
+    <div class="form-grid"><div><label for="batch-start">開始時間</label><input id="batch-start" type="time" value="19:00" required></div><div><label for="batch-end">結束時間</label><input id="batch-end" type="time" value="21:00" required></div></div>
+    <label for="batch-duty">值班人員</label><select id="batch-duty"><option value="">未指定</option></select>
+    <p class="form-error" id="batch-error"></p><div class="dialog-actions"><button type="button" class="button-secondary" data-close="batch-dialog">取消</button><button type="submit">建立堂次</button></div>
+  </form>
+</dialog>
+<script type="module" src="./js/admin.js"></script>
+</body></html>
