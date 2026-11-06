@@ -191,10 +191,16 @@ $("#batch-form").addEventListener("submit", async (event) => {
 
 // Admin module navigation
 function switchModule(name) {
-  const isStudents = name === "students";
-  $("#courses-module").hidden = isStudents;
-  $("#students-module").hidden = !isStudents;
-  document.querySelectorAll("[data-module]").forEach(button => {
+  const modules = ["courses","students","enrollments","makeups","staff","stats"];
+  modules.forEach(m => { const el = document.getElementById(`${m}-module`); if (el) el.hidden = m !== name; });
+  document.querySelectorAll("[data-module]").forEach(button => button.classList.toggle("is-active", button.dataset.module === name));
+  if (name === "students") loadStudents();
+  if (name === "enrollments") loadEnrollments();
+  if (name === "makeups") loadMakeups();
+  if (name === "staff") loadStaff();
+  if (name === "stats") loadStats();
+}
+document.querySelectorAll("[data-module]").forEach(button => {
     button.classList.toggle("is-active", button.dataset.module === name);
   });
   if (isStudents) loadStudents();
@@ -302,4 +308,94 @@ async function toggleStudent(student) {
 }
 
 $("#logout").addEventListener("click", async () => { await supabase.auth.signOut(); location.replace("./index.html"); });
+
+let enrollmentRows = [], makeupRows = [];
+const todayISO = () => new Date().toLocaleDateString("en-CA");
+const money = v => `$${Number(v||0).toLocaleString("en-US")}`;
+async function loadEnrollments() {
+  $("#enrollment-list").innerHTML = '<div class="empty-state">載入報名資料中…</div>';
+  const [{data: es,error:e1},{data:ss,error:e2},{data:cs,error:e3}] = await Promise.all([
+    supabase.from("enrollments").select("*").order("created_at",{ascending:false}),
+    supabase.from("students").select("id,name,is_active"),
+    supabase.from("courses").select("id,name,period_label,status")
+  ]);
+  if(e1||e2||e3){$("#enrollment-list").innerHTML=`<div class="empty-state">讀取失敗：${esc((e1||e2||e3).message)}</div>`;return;}
+  const sm=Object.fromEntries((ss||[]).map(x=>[x.id,x])), cm=Object.fromEntries((cs||[]).map(x=>[x.id,x]));
+  enrollmentRows=(es||[]).map(e=>({...e,student:sm[e.student_id],course:cm[e.course_id]}));
+  renderEnrollments();
+}
+function renderEnrollments(){
+ const q=($("#enrollment-search")?.value||"").toLowerCase(), f=$("#enrollment-filter")?.value||"all";
+ const rows=enrollmentRows.filter(e=>(f==="all"|| (f==="active"?e.status==="active":e.status!=="active")) && `${e.student?.name||""} ${e.course?.name||""} ${e.course?.period_label||""}`.toLowerCase().includes(q));
+ if(!rows.length){$("#enrollment-list").innerHTML='<div class="empty-state">目前沒有符合條件的報名資料。</div>';return;}
+ $("#enrollment-list").innerHTML=rows.map(e=>`<article class="student-card"><div class="student-card-main"><h3>${esc(e.student?.name||"未知學員")}｜${esc(e.course?.name||"未知課程")}</h3><p class="muted">${esc(e.course?.period_label||"")}・${esc(e.status||"未設定狀態")}</p><p>已購買 <b>${Number(e.total_hours||0)}</b> 小時　剩餘 <b>${Number(e.remaining_hours||0)}</b> 小時</p><p class="muted small">學費 ${money(e.tuition_amount)}・器材費 ${money(e.equipment_amount)}</p></div><div class="student-actions"><button class="button-secondary" data-buy="${e.id}">加購時數</button><button class="button-secondary" data-ledger="${e.id}">交易紀錄</button></div></article>`).join("");
+ $("#enrollment-list").querySelectorAll("[data-buy]").forEach(b=>b.onclick=()=>openPurchase(b.dataset.buy));
+ $("#enrollment-list").querySelectorAll("[data-ledger]").forEach(b=>b.onclick=()=>showLedger(b.dataset.ledger));
+}
+$("#enrollment-search")?.addEventListener("input",renderEnrollments); $("#enrollment-filter")?.addEventListener("change",renderEnrollments);
+$("#new-enrollment")?.addEventListener("click",async()=>{
+ const [{data:ss},{data:cs}]=await Promise.all([supabase.from("students").select("id,name").eq("is_active",true).order("name"),supabase.from("courses").select("id,name,period_label").eq("status","active").order("name")]);
+ $("#enroll-student").innerHTML=(ss||[]).map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join("");
+ $("#enroll-course").innerHTML=(cs||[]).map(c=>`<option value="${c.id}">${esc(c.name)}｜${esc(c.period_label)}</option>`).join("");
+ $("#enroll-date").value=todayISO(); $("#enrollment-error").textContent="";
+ if(!ss?.length||!cs?.length){notify("請先建立啟用中的學員與課程。",true);return;} showDialog("enrollment-dialog");
+});
+$("#enrollment-form")?.addEventListener("submit",async ev=>{
+ ev.preventDefault(); const student_id=$("#enroll-student").value, course_id=$("#enroll-course").value;
+ const payload={student_id,course_id,purchased_on:$("#enroll-date").value,total_hours:0,remaining_hours:0,tuition_amount:0,equipment_amount:0,status:"active"};
+ const {data:en,error}=await supabase.from("enrollments").insert(payload).select("id").single();
+ if(error){$("#enrollment-error").textContent=error.message;return;}
+ const {error:purchaseError}=await supabase.rpc("add_enrollment_purchase",{p_enrollment_id:en.id,p_purchase_type:"initial",p_purchased_hours:Number($("#enroll-hours").value),p_tuition_amount:Number($("#enroll-tuition").value||0),p_equipment_amount:Number($("#enroll-equipment").value||0),p_purchased_on:$("#enroll-date").value,p_notes:$("#enroll-notes").value||null});
+ if(purchaseError){await supabase.from("enrollments").delete().eq("id",en.id);$("#enrollment-error").textContent=`報名建立後，首次購買紀錄失敗：${purchaseError.message}。已嘗試回復報名資料。`;return;}
+ closeDialog("enrollment-dialog");notify("報名與首次購買時數已建立。");await loadEnrollments();
+});
+function openPurchase(id){$("#purchase-enrollment-id").value=id;$("#purchase-date").value=todayISO();$("#purchase-error").textContent="";showDialog("purchase-dialog");}
+$("#purchase-form")?.addEventListener("submit",async ev=>{
+ ev.preventDefault();const {error}=await supabase.rpc("add_enrollment_purchase",{p_enrollment_id:$("#purchase-enrollment-id").value,p_purchase_type:"addon",p_purchased_hours:Number($("#purchase-hours").value),p_tuition_amount:Number($("#purchase-tuition").value||0),p_equipment_amount:Number($("#purchase-equipment").value||0),p_purchased_on:$("#purchase-date").value,p_notes:$("#purchase-notes").value||null});
+ if(error){$("#purchase-error").textContent=error.message;return;}closeDialog("purchase-dialog");notify("加購時數已記錄。");await loadEnrollments();
+});
+async function showLedger(id){
+ const {data,error}=await supabase.from("enrollment_transactions").select("transaction_type,hours_delta,description,created_at").eq("enrollment_id",id).order("created_at",{ascending:false});
+ if(error){notify(`讀取交易紀錄失敗：${error.message}`,true);return;}
+ alert((data||[]).map(x=>`${new Date(x.created_at).toLocaleString("zh-TW")}｜${x.transaction_type}｜${x.hours_delta>0?"+":""}${x.hours_delta} 小時｜${x.description||""}`).join("\n")||"尚無交易紀錄");
+}
+$("#new-makeup")?.addEventListener("click",async()=>{
+ const [{data:es},{data:ss}]=await Promise.all([supabase.from("enrollments").select("id,student_id,course_id").eq("status","active"),supabase.from("course_sessions").select("id,session_no,class_date").order("class_date")]);
+ const [{data:students},{data:courses}]=await Promise.all([supabase.from("students").select("id,name"),supabase.from("courses").select("id,name,period_label")]);
+ const sm=Object.fromEntries((students||[]).map(x=>[x.id,x.name])),cm=Object.fromEntries((courses||[]).map(x=>[x.id,`${x.name} ${x.period_label}`]));
+ $("#makeup-enrollment").innerHTML=(es||[]).map(e=>`<option value="${e.id}">${esc(sm[e.student_id]||"學員")}｜${esc(cm[e.course_id]||"課程")}</option>`).join("");
+ $("#makeup-original").innerHTML='<option value="">未指定</option>'+(ss||[]).map(s=>`<option value="${s.id}">第 ${s.session_no} 堂｜${s.class_date}</option>`).join("");
+ $("#makeup-date").value=todayISO();$("#makeup-error").textContent="";showDialog("makeup-dialog");
+});
+$("#makeup-form")?.addEventListener("submit",async ev=>{
+ ev.preventDefault();const h=duration($("#makeup-start").value,$("#makeup-end").value);if(!h||h>12){$("#makeup-error").textContent="請確認補課時間。";return;}
+ const {error}=await supabase.from("makeup_records").insert({enrollment_id:$("#makeup-enrollment").value,original_session_id:$("#makeup-original").value||null,makeup_date:$("#makeup-date").value,start_time:$("#makeup-start").value,end_time:$("#makeup-end").value,duration_hours:h,status:"scheduled",notes:$("#makeup-notes").value||null});
+ if(error){$("#makeup-error").textContent=error.message;return;}closeDialog("makeup-dialog");notify("補課已建立，尚未扣除時數。");await loadMakeups();
+});
+async function loadMakeups(){
+ const {data,error}=await supabase.from("makeup_records").select("*").order("makeup_date",{ascending:false});
+ if(error){$("#makeup-list").innerHTML=`<div class="empty-state">${esc(error.message)}</div>`;return;}
+ const [{data:es},{data:ss}]=await Promise.all([supabase.from("enrollments").select("id,student_id,course_id"),supabase.from("students").select("id,name")]);
+ const sm=Object.fromEntries((ss||[]).map(x=>[x.id,x.name])), em=Object.fromEntries((es||[]).map(x=>[x.id,x]));
+ $("#makeup-list").innerHTML=(data||[]).map(m=>{const e=em[m.enrollment_id];return `<article class="student-card"><div class="student-card-main"><h3>${esc(sm[e?.student_id]||"學員")}｜${m.makeup_date}</h3><p>${m.start_time}–${m.end_time}・${m.duration_hours} 小時</p><p class="muted">${m.status==="completed"?"已完成":m.status==="cancelled"?"已取消":"已預約"}</p></div><div class="student-actions">${m.status==="scheduled"?`<button class="button-secondary" data-complete-makeup="${m.id}">標記完成並扣時</button><button class="text-button danger-text" data-cancel-makeup="${m.id}">取消</button>`:""}</div></article>`}).join("")||'<div class="empty-state">目前沒有補課紀錄。</div>';
+ $("#makeup-list").querySelectorAll("[data-complete-makeup]").forEach(b=>b.onclick=async()=>{if(!confirm("補課已實際完成？確認後會扣除補課時數。"))return;const {error}=await supabase.rpc("complete_makeup_record",{p_makeup_id:b.dataset.completeMakeup});if(error)notify(`完成補課失敗：${error.message}`,true);else{notify("補課已完成並扣除時數。");loadMakeups();}});
+ $("#makeup-list").querySelectorAll("[data-cancel-makeup]").forEach(b=>b.onclick=async()=>{const {error}=await supabase.from("makeup_records").update({status:"cancelled"}).eq("id",b.dataset.cancelMakeup).eq("status","scheduled");if(error)notify(error.message,true);else loadMakeups();});
+}
+async function loadStaff(){
+ const {data,error}=await supabase.from("profiles").select("id,display_name,role,created_at").order("role").order("display_name");
+ if(error){$("#staff-list").textContent=error.message;return;}
+ $("#staff-list").innerHTML=(data||[]).map(p=>`<article class="student-card"><div><h3>${esc(p.display_name||"未命名")}</h3><p class="muted">${p.role}</p></div><button class="button-secondary" data-edit-profile="${p.id}">修改顯示名稱</button></article>`).join("");
+ $("#staff-list").querySelectorAll("[data-edit-profile]").forEach(b=>b.onclick=async()=>{const p=data.find(x=>x.id===b.dataset.editProfile);const name=prompt("輸入顯示名稱",p.display_name||"");if(name===null)return;const {error}=await supabase.from("profiles").update({display_name:name.trim()}).eq("id",p.id);if(error)notify(error.message,true);else{notify("顯示名稱已更新。");loadStaff();}});
+}
+async function loadStats(){
+ const tables=["students","courses","course_sessions","enrollments","attendance","enrollment_purchases","enrollment_transactions","makeup_records"];
+ const counts=await Promise.all(tables.map(async t=>{const {count,error}=await supabase.from(t).select("*",{count:"exact",head:true});return {t,count:count||0,error};}));
+ $("#stats-grid").innerHTML=counts.map(x=>`<article class="stat-card"><span>${x.t}</span><strong>${x.error?"—":x.count}</strong></article>`).join("");
+ const {data:att,error}=await supabase.from("attendance").select("status,session_id");
+ if(error){$("#attendance-stats").textContent=error.message;return;}
+ const present=(att||[]).filter(x=>x.status==="present").length,leave=(att||[]).filter(x=>x.status==="leave").length;
+ $("#attendance-stats").innerHTML=`<p>已點名紀錄：${att?.length||0} 筆　出席：${present} 筆　請假：${leave} 筆</p>`;
+}
+$("#refresh-stats")?.addEventListener("click",loadStats);
+
 await init();

@@ -12,6 +12,10 @@
   <nav class="module-tabs" aria-label="管理模組">
     <button type="button" class="module-tab is-active" data-module="courses">課程與堂次</button>
     <button type="button" class="module-tab" data-module="students">學員管理</button>
+    <button type="button" class="module-tab" data-module="enrollments">報名與時數</button>
+    <button type="button" class="module-tab" data-module="makeups">補課管理</button>
+    <button type="button" class="module-tab" data-module="staff">值班人員</button>
+    <button type="button" class="module-tab" data-module="stats">統計報表</button>
   </nav>
   <p id="admin-message" class="message" role="status"></p>
   <section id="courses-module">
@@ -34,6 +38,25 @@
     </div>
     <p id="student-count" class="muted small"></p>
     <section id="student-list" class="student-list"><div class="empty-state">載入學員資料中…</div></section>
+  </section>
+
+  <section id="enrollments-module" hidden>
+    <div class="admin-toolbar"><div><h2>報名與時數管理</h2><p class="muted small">首次報名與每次加購分開記錄；時數異動保留交易紀錄。</p></div><button id="new-enrollment">＋ 新增報名</button></div>
+    <div class="student-filters"><input id="enrollment-search" type="search" placeholder="搜尋學員或課程"><select id="enrollment-filter"><option value="all">全部報名</option><option value="active">有效報名</option><option value="inactive">停用報名</option></select></div>
+    <section id="enrollment-list" class="student-list"><div class="empty-state">載入報名資料中…</div></section>
+  </section>
+  <section id="makeups-module" hidden>
+    <div class="admin-toolbar"><div><h2>補課管理</h2><p class="muted small">預約補課；完成後才扣除實際補課時數。</p></div><button id="new-makeup">＋ 新增補課</button></div>
+    <section id="makeup-list" class="student-list"><div class="empty-state">載入補課資料中…</div></section>
+  </section>
+  <section id="staff-module" hidden>
+    <div class="admin-toolbar"><div><h2>值班人員</h2><p class="muted small">管理既有帳號的顯示名稱；新增登入帳號仍由 Supabase Auth 管理。</p></div></div>
+    <section id="staff-list" class="student-list"></section>
+  </section>
+  <section id="stats-module" hidden>
+    <div class="admin-toolbar"><div><h2>統計報表</h2><p class="muted small">依目前資料庫紀錄即時彙整。</p></div><button class="button-secondary" id="refresh-stats">重新整理</button></div>
+    <section id="stats-grid" class="stats-grid"></section>
+    <section class="panel"><h3>課程出席概況</h3><div id="attendance-stats" class="table-wrap"></div></section>
   </section>
 </main>
 
@@ -86,5 +109,27 @@
     <p class="form-error" id="batch-error"></p><div class="dialog-actions"><button type="button" class="button-secondary" data-close="batch-dialog">取消</button><button type="submit">建立堂次</button></div>
   </form>
 </dialog>
-<script type="module" src="./js/admin.js"></script>
+
+<dialog id="enrollment-dialog" class="app-dialog"><form id="enrollment-form" method="dialog">
+  <div class="dialog-heading"><h2>新增課程報名</h2><button type="button" class="icon-close" data-close="enrollment-dialog">✕</button></div>
+  <label>學員</label><select id="enroll-student" required></select><label>課程期別</label><select id="enroll-course" required></select>
+  <label>報名日期</label><input id="enroll-date" type="date" required><label>購買時數</label><input id="enroll-hours" type="number" min="0.01" step="0.25" required>
+  <label>學費</label><input id="enroll-tuition" type="number" min="0" step="1" value="0"><label>器材租借費（整期一次）</label><input id="enroll-equipment" type="number" min="0" step="1" value="0">
+  <label class="checkline"><input id="enroll-rental" type="checkbox"> 本期需要租借器材</label><label>備註</label><textarea id="enroll-notes" rows="2"></textarea>
+  <p class="form-error" id="enrollment-error"></p><div class="dialog-actions"><button type="button" class="button-secondary" data-close="enrollment-dialog">取消</button><button type="submit">建立報名</button></div>
+</form></dialog>
+<dialog id="purchase-dialog" class="app-dialog"><form id="purchase-form" method="dialog">
+  <div class="dialog-heading"><h2>加購時數</h2><button type="button" class="icon-close" data-close="purchase-dialog">✕</button></div><input type="hidden" id="purchase-enrollment-id">
+  <label>加購日期</label><input id="purchase-date" type="date" required><label>加購時數</label><input id="purchase-hours" type="number" min="0.01" step="0.25" required>
+  <label>學費</label><input id="purchase-tuition" type="number" min="0" step="1" value="0"><label>其他費用</label><input id="purchase-equipment" type="number" min="0" step="1" value="0"><label>備註</label><textarea id="purchase-notes" rows="2"></textarea>
+  <p class="form-error" id="purchase-error"></p><div class="dialog-actions"><button type="button" class="button-secondary" data-close="purchase-dialog">取消</button><button type="submit">確認加購</button></div>
+</form></dialog>
+<dialog id="makeup-dialog" class="app-dialog"><form id="makeup-form" method="dialog">
+  <div class="dialog-heading"><h2>新增補課</h2><button type="button" class="icon-close" data-close="makeup-dialog">✕</button></div>
+  <label>學員／課程報名</label><select id="makeup-enrollment" required></select><label>原課堂（選填）</label><select id="makeup-original"><option value="">未指定</option></select>
+  <label>補課日期</label><input id="makeup-date" type="date" required><div class="form-grid"><div><label>開始時間</label><input id="makeup-start" type="time" required value="19:00"></div><div><label>結束時間</label><input id="makeup-end" type="time" required value="21:00"></div></div>
+  <label>備註</label><textarea id="makeup-notes" rows="2"></textarea><p class="form-error" id="makeup-error"></p>
+  <div class="dialog-actions"><button type="button" class="button-secondary" data-close="makeup-dialog">取消</button><button type="submit">建立補課</button></div>
+</form></dialog>
+\n<script type="module" src="./js/admin.js"></script>
 </body></html>
